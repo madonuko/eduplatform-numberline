@@ -1,9 +1,16 @@
+---
+const assetBase = import.meta.env.PROD ? '/eduplatform-numberline' : '';
+const cssHref = `${assetBase}/styles.css`;
+const faviconSvgHref = `${assetBase}/favicon.svg`;
+const faviconIcoHref = `${assetBase}/favicon.ico`;
+---
+
 <html lang="zh-Hant">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" href="/favicon.ico" />
-    <link rel="stylesheet" href="/styles.css">
+    <link rel="icon" type="image/svg+xml" href={faviconSvgHref} />
+    <link rel="icon" href={faviconIcoHref} />
+    <link rel="stylesheet" href={cssHref}>
     <meta name="viewport" content="width=device-width" />
     <meta name="generator" content={Astro.generator} />
     <title>數線加法學習流程</title>
