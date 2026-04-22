@@ -1,7 +1,3 @@
----
-import NumberLineGame from '../components/NumberLineGame.jsx';
----
-
 <html lang="zh-Hant">
   <head>
     <meta charset="utf-8" />
@@ -13,6 +9,390 @@ import NumberLineGame from '../components/NumberLineGame.jsx';
     <title>數線加法學習流程</title>
   </head>
   <body>
-    <NumberLineGame client:only="react" />
+    <div id="game-root"></div>
+
+    <script is:inline>
+      (function () {
+        var root = document.getElementById('game-root');
+        var timers = [];
+
+        function getRandomQuestion() {
+          var a = Math.floor(Math.random() * 10);
+          var maxB = Math.min(9, 10 - a);
+          var b = Math.floor(Math.random() * (maxB + 1));
+          return { a: a, b: b, answer: a + b };
+        }
+
+        function buildExpectedSequence(start, jumpBy) {
+          if (jumpBy === 0) {
+            return [start, start];
+          }
+
+          var target = start + jumpBy;
+          var seq = [];
+          for (var n = start + 1; n <= target; n += 1) {
+            seq.push(n);
+          }
+          seq.push(target);
+          return seq;
+        }
+
+        function clearTimers() {
+          timers.forEach(function (t) {
+            clearTimeout(t);
+          });
+          timers = [];
+        }
+
+        function schedule(cb, delay) {
+          var t = setTimeout(cb, delay);
+          timers.push(t);
+        }
+
+        var state = {
+          question: getRandomQuestion(),
+          score: 0,
+          hasAwarded: false,
+          phase: 1,
+          result: 'idle',
+          isDemo: false,
+          selectedOperand: null,
+          clickedNumbers: [],
+          hoveredNumber: null,
+          progressIndex: 0,
+          arrows: []
+        };
+
+        function getStartValue() {
+          if (state.selectedOperand === 'a') {
+            return state.question.a;
+          }
+          if (state.selectedOperand === 'b') {
+            return state.question.b;
+          }
+          return null;
+        }
+
+        function getJumpBy() {
+          if (state.selectedOperand === 'a') {
+            return state.question.b;
+          }
+          if (state.selectedOperand === 'b') {
+            return state.question.a;
+          }
+          return null;
+        }
+
+        function getExpectedSequence() {
+          var start = getStartValue();
+          var jumpBy = getJumpBy();
+          if (start === null || jumpBy === null) {
+            return [];
+          }
+          return buildExpectedSequence(start, jumpBy);
+        }
+
+        function beginState3() {
+          state.phase = 3;
+          state.progressIndex = 0;
+          render();
+        }
+
+        function resetForQuestion(nextQuestion) {
+          clearTimers();
+          state.question = nextQuestion || getRandomQuestion();
+          state.hasAwarded = false;
+          state.phase = 1;
+          state.result = 'idle';
+          state.isDemo = false;
+          state.selectedOperand = null;
+          state.clickedNumbers = [];
+          state.hoveredNumber = null;
+          state.progressIndex = 0;
+          state.arrows = [];
+          render();
+        }
+
+        function addArrow(from, to) {
+          if (to !== from + 1) {
+            return;
+          }
+          var exists = state.arrows.some(function (arrow) {
+            return arrow.from === from && arrow.to === to;
+          });
+          if (!exists) {
+            state.arrows.push({ from: from, to: to });
+          }
+        }
+
+        function startDemo() {
+          clearTimers();
+
+          var demoStart = state.question.a;
+          var demoJumpBy = state.question.b;
+          var demoSequence = buildExpectedSequence(demoStart, demoJumpBy);
+
+          state.isDemo = true;
+          state.phase = 1;
+          state.selectedOperand = null;
+          state.clickedNumbers = [];
+          state.hoveredNumber = null;
+          state.progressIndex = 0;
+          state.arrows = [];
+          render();
+
+          schedule(function () {
+            state.selectedOperand = 'a';
+            state.clickedNumbers = [demoStart];
+            state.phase = 2;
+            render();
+          }, 700);
+
+          schedule(function () {
+            beginState3();
+          }, 3700);
+
+          var delay = 4700;
+          demoSequence.forEach(function (value, index) {
+            schedule(function () {
+              if (state.clickedNumbers.indexOf(value) === -1) {
+                state.clickedNumbers.push(value);
+              }
+              var from = index === 0 ? demoStart : demoSequence[index - 1];
+              addArrow(from, value);
+              state.progressIndex = index + 1;
+              render();
+            }, delay);
+            delay += 1000;
+          });
+
+          schedule(function () {
+            state.result = 'correct';
+            state.phase = 4;
+            state.isDemo = false;
+            render();
+          }, delay);
+        }
+
+        function markWrong() {
+          clearTimers();
+          state.result = 'wrong';
+          state.phase = 4;
+          render();
+          schedule(function () {
+            startDemo();
+          }, 1200);
+        }
+
+        function handleNumberClick(value) {
+          if (state.isDemo) {
+            return;
+          }
+
+          if (state.phase === 1) {
+            if (value !== state.question.a && value !== state.question.b) {
+              markWrong();
+              return;
+            }
+
+            state.selectedOperand = value === state.question.a ? 'a' : 'b';
+            state.clickedNumbers = [value];
+            state.result = 'idle';
+            state.phase = 2;
+            render();
+
+            clearTimers();
+            schedule(function () {
+              beginState3();
+            }, 3000);
+            return;
+          }
+
+          if (state.phase !== 3) {
+            return;
+          }
+
+          var expectedSequence = getExpectedSequence();
+          var expected = expectedSequence[state.progressIndex];
+
+          if (value !== expected) {
+            markWrong();
+            return;
+          }
+
+          if (state.clickedNumbers.indexOf(value) === -1) {
+            state.clickedNumbers.push(value);
+          }
+
+          var startValue = getStartValue();
+          var from = state.progressIndex === 0 ? startValue : expectedSequence[state.progressIndex - 1];
+          addArrow(from, expected);
+
+          state.progressIndex += 1;
+
+          if (state.progressIndex >= expectedSequence.length) {
+            if (!state.hasAwarded) {
+              state.score += state.question.answer;
+              state.hasAwarded = true;
+            }
+            state.result = 'correct';
+            state.phase = 4;
+            clearTimers();
+          }
+
+          render();
+        }
+
+        function handleHover(value) {
+          state.hoveredNumber = value;
+          render();
+        }
+
+        function getPrimaryMessage() {
+          if (state.phase === 1) {
+            return '圈起點';
+          }
+          if (state.phase === 2) {
+            return '見加號';
+          }
+          if (state.phase === 3) {
+            return '向右跳';
+          }
+          if (state.result === 'wrong') {
+            return '再試一次，我陪你一起跳！';
+          }
+          return '數變大！';
+        }
+
+        function getSecondaryMessage() {
+          if (state.phase === 3) {
+            return '雙按以確定最終答案';
+          }
+          if (state.phase === 4 && state.result === 'correct') {
+            return '做得好，繼續努力！';
+          }
+          if (state.phase === 4 && state.result === 'wrong') {
+            return '即將開始示範流程';
+          }
+          return '';
+        }
+
+        function render() {
+          var highlightedOperand = null;
+          if (state.phase === 3 && state.selectedOperand) {
+            highlightedOperand = state.selectedOperand === 'a' ? 'b' : 'a';
+          }
+
+          var pointerNumber = state.phase === 2 ? getStartValue() : null;
+          var resultDisplay = state.phase === 4 && state.result === 'correct' ? state.question.answer : '?';
+          var statusTag = state.isDemo ? '示範中' : '練習中';
+          var arrowStarts = {};
+          state.arrows.forEach(function (arrow) {
+            arrowStarts[arrow.from] = true;
+          });
+
+          var pointButtons = '';
+          for (var n = 0; n <= 10; n += 1) {
+            var clicked = state.clickedNumbers.indexOf(n) !== -1;
+            var hover = state.hoveredNumber === n;
+            var showCircle = clicked || hover;
+            pointButtons +=
+              '<button class="pointCell" data-number="' +
+              n +
+              '"><div class="pointMark' +
+              (showCircle ? ' showCircle' : '') +
+              '"></div><span class="pointLabel">' +
+              n +
+              '</span></button>';
+          }
+
+          var arrowCells = '';
+          for (var i = 0; i < 10; i += 1) {
+            arrowCells += '<div class="arrowCell">' + (arrowStarts[i] ? '<span class="jumpArrow">→</span>' : '') + '</div>';
+          }
+
+          var pointerCells = '';
+          for (var p = 0; p <= 10; p += 1) {
+            pointerCells +=
+              '<div class="pointerCell">' +
+              (pointerNumber === p
+                ? '<div class="pointerHint"><span class="pointerArrow">↑</span><span class="pointerText">見加號</span></div>'
+                : '') +
+              '</div>';
+          }
+
+          root.innerHTML =
+            '<section class="gameCard">' +
+            '<p class="badge">數線加法小遊戲</p>' +
+            '<h1 class="title">一起在數線上算加法</h1>' +
+            '<p class="phaseTag">' +
+            statusTag +
+            '</p>' +
+            '<div class="scoreBoard">累積分數：' +
+            state.score +
+            '</div>' +
+            '<div class="questionBox">' +
+            '<span class="num' +
+            (highlightedOperand === 'a' ? ' highlightNum' : '') +
+            '">' +
+            state.question.a +
+            '</span>' +
+            '<span class="op">+</span>' +
+            '<span class="num' +
+            (highlightedOperand === 'b' ? ' highlightNum' : '') +
+            '">' +
+            state.question.b +
+            '</span>' +
+            '<span class="op">=</span>' +
+            '<span class="result">' +
+            resultDisplay +
+            '</span>' +
+            '</div>' +
+            '<div class="lineWrap" aria-label="數線">' +
+            '<div class="lineTrack"></div>' +
+            '<div class="pointRow">' +
+            pointButtons +
+            '</div>' +
+            '<div class="arrowRow" aria-hidden="true">' +
+            arrowCells +
+            '</div>' +
+            '<div class="pointerRow" aria-hidden="true">' +
+            pointerCells +
+            '</div>' +
+            '</div>' +
+            '<div class="guide"><div class="guideMain">' +
+            getPrimaryMessage() +
+            '</div>' +
+            (getSecondaryMessage() ? '<div class="guideSub">' + getSecondaryMessage() + '</div>' : '') +
+            '</div>' +
+            '<div class="controls"><button class="btn nextBtn" id="next-question" type="button">下一題</button></div>' +
+            '</section>';
+
+          var pointCells = root.querySelectorAll('.pointCell');
+          pointCells.forEach(function (el) {
+            var value = Number(el.getAttribute('data-number'));
+            el.addEventListener('mouseenter', function () {
+              handleHover(value);
+            });
+            el.addEventListener('mouseleave', function () {
+              handleHover(null);
+            });
+            el.addEventListener('click', function () {
+              handleNumberClick(value);
+            });
+          });
+
+          var nextBtn = root.querySelector('#next-question');
+          if (nextBtn) {
+            nextBtn.addEventListener('click', function () {
+              resetForQuestion(getRandomQuestion());
+            });
+          }
+        }
+
+        window.addEventListener('beforeunload', clearTimers);
+        render();
+      })();
+    </script>
   </body>
 </html>
